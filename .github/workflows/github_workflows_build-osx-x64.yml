@@ -1,0 +1,58 @@
+# GitHub Actions workflow: build libnusqlite3 for macOS x86_64 with deployment target 10.13
+name: Build libnusqlite3 (osx x86_64, macOS 10.13)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-11
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repo (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+
+      - name: Install dependencies (Homebrew, cmake)
+        run: |
+          brew update || true
+          brew install cmake || true
+          cmake --version
+
+      - name: Configure environment for macOS 10.13 x86_64
+        run: |
+          export MACOSX_DEPLOYMENT_TARGET=10.13
+          export CFLAGS="-mmacosx-version-min=10.13"
+          export LDFLAGS="-mmacosx-version-min=10.13"
+          echo "MACOSX_DEPLOYMENT_TARGET=$MACOSX_DEPLOYMENT_TARGET"
+
+      - name: Create build dir & run CMake
+        run: |
+          mkdir -p build
+          cd build
+          # Force x86_64 target and minimum macOS version
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -G "Unix Makefiles"
+          cmake --build . --config Release -- -j$(sysctl -n hw.ncpu)
+
+      - name: Find built artifact
+        id: findart
+        run: |
+          cd build
+          ART=$(find . -type f -name 'libnusqlite3*.dylib' | head -n1 || true)
+          if [ -z "$ART" ]; then
+            echo "No artifact found"
+            exit 1
+          fi
+          echo "artifact=$ART" >> $GITHUB_OUTPUT
+          echo "Found artifact: $ART"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libnusqlite3-osx-x64
+          path: build/${{ steps.findart.outputs.artifact }}
